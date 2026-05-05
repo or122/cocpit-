@@ -1,112 +1,103 @@
-(function(){
-  var toastEl = document.getElementById('cocpit-toast');
-  var toastTimer;
-  function toast(msg){
-    toastEl.textContent = msg;
-    toastEl.style.opacity = '1';
-    toastEl.style.transform = 'translateX(-50%) translateY(0)';
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(function(){
-      toastEl.style.opacity = '0';
-      toastEl.style.transform = 'translateX(-50%) translateY(20px)';
-    }, 1600);
-  }
+// Bootstrap: register routes, wire global chrome, initial render.
+import { register, render, go, currentPath } from './router.js';
+import { toast } from './toast.js';
+import missionControl from './views/mission-control.js';
+import tasks from './views/tasks.js';
+import approvals from './views/approvals.js';
+import { tasks as taskList, approvals as approvalList } from './data.js';
 
-  function activateInGroup(items, target, cls){
-    items.forEach(function(b){ b.classList.remove(cls); });
-    target.classList.add(cls);
-  }
+// A stub view for sidebar items that aren't fully built yet.
+function stub(title, blurb) {
+  return {
+    title,
+    render() {
+      return `
+        <div class="content">
+          <div class="page-head">
+            <div>
+              <h1>${title}</h1>
+              <div class="greet"><span>${blurb}</span></div>
+            </div>
+          </div>
+          <section class="sec">
+            <div class="empty" style="padding:48px;text-align:center;color:var(--muted)">
+              This view is a stub. Mission Control, Tasks, and Approvals are the working pages in this MVP.
+            </div>
+          </section>
+        </div>`;
+    }
+  };
+}
 
-  // Sidebar nav
-  var navItems = Array.prototype.slice.call(document.querySelectorAll('aside nav .nav-item'));
-  navItems.forEach(function(item){
-    item.addEventListener('click', function(){
-      activateInGroup(navItems, item, 'active');
-      toast('Opened: ' + item.textContent.trim().replace(/\s+/g,' '));
+register('/',           missionControl);
+register('/tasks',      tasks);
+register('/approvals',  approvals);
+register('/live',       stub('Live runs', 'Theatre view across all running agents — coming next.'));
+register('/history',    stub('History', 'Completed missions, filterable by agent and date — coming next.'));
+register('/apps',       stub('Connected apps', 'Manage OAuth connections to Mail, Drive, Notion, etc.'));
+register('/permissions',stub('Permissions', 'What each agent is allowed to touch on your machine.'));
+register('/billing',    stub('Usage & billing', 'Daily ration, top spender, monthly invoices.'));
+
+// Sidebar nav: clicks toggle the route via hash.
+function bindSidebar() {
+  document.querySelectorAll('aside nav .nav-item[data-route]').forEach(item => {
+    item.addEventListener('click', () => {
+      go(item.dataset.route);
+      toast('Opened: ' + item.textContent.trim().replace(/\s+/g, ' '));
     });
   });
-
-  // Sidebar agent rows
-  document.querySelectorAll('.agent-row').forEach(function(row){
-    row.addEventListener('click', function(){
-      var name = row.querySelector('.ag-name');
+  document.querySelectorAll('aside .agent-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const name = row.querySelector('.ag-name');
       toast('Selected agent: ' + (name ? name.textContent : 'agent'));
     });
   });
+}
 
-  // Segmented controls (Today/Live/7d/All etc.)
-  document.querySelectorAll('.seg').forEach(function(seg){
-    var btns = Array.prototype.slice.call(seg.querySelectorAll('button'));
-    btns.forEach(function(b){
-      b.addEventListener('click', function(){
-        activateInGroup(btns, b, 'on');
-        toast('Filter: ' + b.textContent.trim());
-      });
-    });
-  });
-
-  // Primary "New mission" button & accent buttons
-  document.querySelectorAll('.primary-btn, .accent-btn').forEach(function(b){
-    b.addEventListener('click', function(){
-      toast(b.textContent.trim() + ' — opening…');
-    });
-  });
-
-  // Ghost buttons (View board, Pause all, Manage, etc.)
-  document.querySelectorAll('.ghost-btn').forEach(function(b){
-    b.addEventListener('click', function(){
-      toast(b.textContent.trim());
-    });
-  });
-
-  // Icon buttons (top right)
-  document.querySelectorAll('.icon-btn').forEach(function(b){
-    b.addEventListener('click', function(){
-      toast(b.getAttribute('title') || 'Action');
-    });
-  });
-
-  // Live agent controls (take over / pause / stop)
-  document.querySelectorAll('.live-controls .ctl').forEach(function(b){
-    b.addEventListener('click', function(){
-      toast(b.getAttribute('title') || 'Control');
-    });
-  });
-
-  // Search input
-  var searchInput = document.querySelector('.search input');
-  if(searchInput){
-    searchInput.addEventListener('keydown', function(e){
-      if(e.key === 'Enter' && searchInput.value.trim()){
+// Topbar: search, primary "New mission", icon buttons.
+function bindTopbar() {
+  const searchInput = document.querySelector('.topbar .search input');
+  if (searchInput) {
+    searchInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && searchInput.value.trim()) {
         toast('Asking the squad: "' + searchInput.value.trim() + '"');
         searchInput.value = '';
       }
     });
   }
-
-  // Browser-mock submit
-  var submit = document.querySelector('.b-form .submit');
-  if(submit){
-    submit.addEventListener('click', function(){
-      toast('Search flights — Bingo is on it');
+  document.querySelectorAll('.topbar .icon-btn').forEach(b => {
+    b.addEventListener('click', () => {
+      const title = b.getAttribute('title');
+      if (title === 'Approvals') go('/approvals');
+      else toast(title || 'Action');
     });
+  });
+  document.querySelectorAll('.topbar .primary-btn').forEach(b => {
+    b.addEventListener('click', () => toast(b.textContent.trim() + ' — opening…'));
+  });
+}
+
+// Live counters in the topbar pill + sidebar approval badge.
+function refreshCounters() {
+  const live = taskList.filter(t => t.status === 'live').length;
+  const pill = document.querySelector('.topbar .live-pill');
+  if (pill) pill.innerHTML = `<span class="d"></span>${live} of 7 live`;
+  const apprBadge = document.querySelector('aside nav .nav-item[data-route="/approvals"] .badge');
+  if (apprBadge) apprBadge.textContent = String(approvalList.length);
+}
+
+// ⌘K focuses the search input.
+window.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault();
+    const input = document.querySelector('.topbar .search input');
+    if (input) input.focus();
   }
+});
 
-  // Permission toggles
-  document.querySelectorAll('.perm').forEach(function(p){
-    p.style.cursor = 'pointer';
-    p.addEventListener('click', function(){
-      p.classList.toggle('off');
-      var name = p.querySelector('.perm-name');
-      toast((p.classList.contains('off') ? 'Disabled: ' : 'Enabled: ') + (name ? name.textContent : 'permission'));
-    });
-  });
-
-  // Tool chips (connected apps)
-  document.querySelectorAll('.tool-chip').forEach(function(c){
-    c.style.cursor = 'pointer';
-    c.addEventListener('click', function(){
-      toast(c.getAttribute('title') || 'App');
-    });
-  });
-})();
+bindSidebar();
+bindTopbar();
+refreshCounters();
+// If user lands on a non-existent hash, normalize to /.
+if (!location.hash) location.hash = '/';
+render();
